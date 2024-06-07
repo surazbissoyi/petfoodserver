@@ -50,11 +50,14 @@ app.post('/upload', upload.single('product'), (req, res) => {
         });
     }
 
+    // Construct the image URL using the request's protocol and host
+    const imageUrl = `${req.protocol}://${req.get('host')}/images/${req.file.filename}`;
     res.json({
         success: 1,
-        image_url: `${req.protocol}://${req.get('host')}/images/${req.file.filename}`
+        image_url: imageUrl
     });
 });
+
 
 // Schema for creating products
 const Product = mongoose.model("Product", {
