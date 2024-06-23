@@ -15,8 +15,14 @@ app.use(cors());
 
 // Ensure upload directory exists
 const uploadDir = './upload/images';
-if (!fs.existsSync(uploadDir)) {
+try {
     fs.mkdirSync(uploadDir, { recursive: true });
+    console.log("Upload directory created successfully");
+} catch (err) {
+    if (err.code !== 'EEXIST') {
+        console.error("Error creating upload directory:", err);
+        process.exit(1);
+    }
 }
 
 // Database connection with MongoDB
