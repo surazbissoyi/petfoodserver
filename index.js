@@ -14,16 +14,22 @@ app.use(express.json());
 app.use(cors());
 
 // Ensure upload directory exists
-const uploadDir = './upload/images';
+const uploadDir = path.join(__dirname, 'upload/images');
+const uploadParentDir = path.dirname(uploadDir);
+
 try {
-    fs.mkdirSync(uploadDir, { recursive: true });
+    if (!fs.existsSync(uploadParentDir)) {
+        fs.mkdirSync(uploadParentDir, { recursive: true });
+    }
+    if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+    }
     console.log("Upload directory created successfully");
 } catch (err) {
-    if (err.code !== 'EEXIST') {
-        console.error("Error creating upload directory:", err);
-        process.exit(1);
-    }
+    console.error("Error creating upload directory:", err);
+    process.exit(1);
 }
+
 
 // Database connection with MongoDB
 mongoose.connect(process.env.MONGO_URL)
