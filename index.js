@@ -7,11 +7,54 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const jwt = require('jsonwebtoken');
-const { type } = require("os");
-require('dotenv').config()
+const Razorpay = require('razorpay');
+const crypto = require('crypto'); // For verifying the payment signature
+require('dotenv').config();
 
 app.use(express.json());
 app.use(cors());
+
+// Razorpay instance
+const razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY,  // Add your Razorpay Key ID in .env
+    key_secret: process.env.RAZORPAY_SECRET // Add your Razorpay Secret in .env
+});
+
+// Payment Gateway - Create Order Endpoint
+app.post('/create_order', async (req, res) => {
+    const { amount, currency, receipt } = req.body;
+
+    const options = {
+        amount: amount * 100, // Convert to paisa
+        currency: currency,
+        receipt: receipt,
+    };
+
+    try {
+        const order = await razorpay.orders.create(options);
+        res.json(order);
+    } catch (error) {
+        console.error("Error creating order:", error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Payment Verification Endpoint
+app.post('/verify_payment', (req, res) => {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const expectedSignature = crypto
+        .createHmac('sha256', process.env.RAZORPAY_SECRET)
+        .update(body.toString())
+        .digest('hex');
+
+    if (expectedSignature === razorpay_signature) {
+        res.json({ success: true, message: "Payment verified successfully" });
+    } else {
+        res.status(400).json({ success: false, message: "Invalid signature" });
+    }
+});
 
 // Ensure upload directory exists
 const uploadDir = path.join(__dirname, 'upload/images');
@@ -29,7 +72,6 @@ try {
     console.error("Error creating upload directory:", err);
     process.exit(1);
 }
-
 
 // Database connection with MongoDB
 mongoose.connect(process.env.MONGO_URL)
@@ -103,13 +145,13 @@ const Product = mongoose.model("Product", {
         type: Boolean,
         default: true,
     },
-})
+});
 
-app.post('/addproduct', async(req, res) => {
+app.post('/addproduct', async (req, res) => {
     let products = await Product.find({});
     let id;
 
-    if(products.length > 0) {
+    if (products.length > 0) {
         let last_product = products[products.length - 1];
         id = last_product.id + 1;
     } else {
@@ -121,57 +163,32 @@ app.post('/addproduct', async(req, res) => {
         image: req.body.image,
         category: req.body.category,
         new_price: req.body.new_price,
-        old_price: req.body.old_price
-    })
+        old_price: req.body.old_price,
+    });
 
-    console.log(product);
     await product.save();
-    console.log("Saved");
-    res.json({
-        success: true,
-        name: req.body.name
-    })
-})
+    res.json({ success: true, name: req.body.name });
+});
 
-// creating api to add products
-app.post('/removeproduct', async(req, res) => {
-    await Product.findOneAndDelete({id:req.body.id});
-    console.log("Removed");
-    res.json({
-        success: true,
-        name: req.body.name
-    })
-})
+app.post('/removeproduct', async (req, res) => {
+    await Product.findOneAndDelete({ id: req.body.id });
+    res.json({ success: true, name: req.body.name });
+});
 
-// creating api to get all products
-app.get('/allproducts', async(req, res) => {
+app.get('/allproducts', async (req, res) => {
     let products = await Product.find({});
-    console.log("All products fetched");
     res.send(products);
-})
+});
 
 // Schema user model
 const User = mongoose.model('User', {
-    name: {
-        type: String,
-    },
-    email: {
-        type: String,
-        unique: true
-    },
-    password: {
-        type: String,
-    },
-    cartData: {
-        type: Object,
-    },
-    date: {
-        type: Date,
-        default: Date.now
-    }
-})
+    name: { type: String },
+    email: { type: String, unique: true },
+    password: { type: String },
+    cartData: { type: Object },
+    date: { type: Date, default: Date.now },
+});
 
-// Creating endpoint for registration the user
 app.post('/signup', async (req, res) => {
     const email = req.body.email.toLowerCase();
     let check = await User.findOne({ email });
@@ -186,31 +203,22 @@ app.post('/signup', async (req, res) => {
         name: req.body.username,
         email,
         password: req.body.password,
-        cartData: cart
+        cartData: cart,
     });
     await user.save();
 
-    const data = {
-        user: {
-            id: user.id
-        }
-    };
+    const data = { user: { id: user.id } };
     const token = jwt.sign(data, 'secret_ecom');
     res.json({ success: true, token });
 });
 
-// Creating endpoint for user login
 app.post('/login', async (req, res) => {
     const email = req.body.email.toLowerCase();
     let user = await User.findOne({ email });
     if (user) {
         const passMatch = req.body.password === user.password;
         if (passMatch) {
-            const data = {
-                user: {
-                    id: user.id
-                }
-            };
+            const data = { user: { id: user.id } };
             const token = jwt.sign(data, 'secret_ecom');
             res.json({ success: true, token });
         } else {
@@ -221,64 +229,58 @@ app.post('/login', async (req, res) => {
     }
 });
 
-
-// creating endpoint for latestproduct
-app.get('/newcollections', async(req, res) => {
+// Fetch new collections
+app.get('/newcollections', async (req, res) => {
     let products = await Product.find({});
     let newcollection = products.slice(1).slice(-8);
-    console.log("Newcollection Fetched")
-    res.send(newcollection)
-})
+    res.send(newcollection);
+});
 
-// creating endpoint for popular products
-app.get('/popularproducts', async(req, res) => {
+// Fetch popular products
+app.get('/popularproducts', async (req, res) => {
     let products = await Product.find({});
-    let popularproducts = products.slice(0,4);
-    console.log("popular Products fetched");
+    let popularproducts = products.slice(0, 4);
     res.send(popularproducts);
-})
+});
 
-// creating middlewear to fetch user
+// Middleware to fetch user
 const fetchUser = async (req, res, next) => {
     const token = req.header('auth-token');
-    if(!token) {
-        res.status(401).send({errors: "Please authenticate using valid login"})
+    if (!token) {
+        return res.status(401).send({ errors: "Please authenticate using valid login" });
     } else {
         try {
             const data = jwt.verify(token, 'secret_ecom');
             req.user = data.user;
             next();
         } catch (error) {
-            res.status(401).send({errors: "please authenticate using a valid token"});
+            return res.status(401).send({ errors: "Please authenticate using a valid token" });
         }
     }
-}
+};
 
-// creating endpoint for adding peoducts in cartdata
-app.post('/addtocart', fetchUser, async(req, res) => {
-    console.log("Removed", req.body.itemId);
-    let userData = await User.findOne({_id: req.user.id});
+// Add product to cart
+app.post('/addtocart', fetchUser, async (req, res) => {
+    let userData = await User.findOne({ _id: req.user.id });
     userData.cartData[req.body.itemId] += 1;
-    await User.findOneAndUpdate({_id: req.user.id}, {cartData: userData.cartData});
+    await User.findOneAndUpdate({ _id: req.user.id }, { cartData: userData.cartData });
     res.send("Added");
-})
+});
 
-// creating endpoint for removing cartData
-app.post('/removefromcart', fetchUser, async(req, res) => {
-    console.log("Removed", req.body.itemId);
-    let userData = await User.findOne({_id: req.user.id});
+// Remove product from cart
+app.post('/removefromcart', fetchUser, async (req, res) => {
+    let userData = await User.findOne({ _id: req.user.id });
     if (userData.cartData[req.body.itemId] > 0)
         userData.cartData[req.body.itemId] -= 1;
-        await User.findOneAndUpdate({_id: req.user.id}, {cartData: userData.cartData});
-    res.send("Added");
-})
+    await User.findOneAndUpdate({ _id: req.user.id }, { cartData: userData.cartData });
+    res.send("Removed");
+});
 
-// creating endpoint to get cart data
-app.post('/getcart', fetchUser, async(req, res) => {
-    console.log("Get cart");
-    let userData = await User.findOne({_id: req.user.id});
+// Get cart data
+app.post('/getcart', fetchUser, async (req, res) => {
+    let userData = await User.findOne({ _id: req.user.id });
     res.json(userData.cartData);
-})
+});
 
 // Start the server
 app.listen(port, (error) => {
