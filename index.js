@@ -10,9 +10,16 @@ const jwt = require('jsonwebtoken');
 const Razorpay = require('razorpay');
 const crypto = require('crypto'); // For verifying the payment signature
 require('dotenv').config();
+const orderRoutes = require('./Routes/orderRoutes');
+
+
+
 
 app.use(express.json());
 app.use(cors());
+
+// Important Routes
+app.use('/orders', orderRoutes);
 
 // Razorpay instance
 const razorpay = new Razorpay({
